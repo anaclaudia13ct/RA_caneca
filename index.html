@@ -25,6 +25,8 @@
     .status { min-height: 1.5em; color: #f0d6a6 !important; font-size: .95rem; }
     button, .link-button { display: inline-flex; justify-content: center; align-items: center; min-height: 48px; padding: 12px 18px; border: 0; border-radius: 12px; background: #d6ad64; color: #201b12; font: inherit; font-weight: 750; text-decoration: none; cursor: pointer; }
     button:focus-visible, a:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+    .live-status { position: absolute; z-index: 4; left: 12px; right: 12px; bottom: 12px; margin: 0; padding: 10px 14px; border: 1px solid #77746d; border-radius: 12px; background: rgba(22,22,20,.9); color: #fff; font-size: .9rem; line-height: 1.4; text-align: center; }
+    .live-status[hidden] { display: none; }
     .stop { position: absolute; z-index: 6; top: 12px; right: 12px; min-height: 42px; padding: 9px 14px; background: rgba(22,22,20,.88); color: white; border: 1px solid #77746d; }
     .help { margin: 14px 2px 0; color: #cbc8c0; font-size: .92rem; line-height: 1.5; }
     .fallback { margin-top: 18px; }
@@ -52,7 +54,7 @@
         </a-assets>
         <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
         <a-entity id="mug-target" mindar-image-target="targetIndex: 0">
-          <a-gltf-model src="#mug-model" position="0 0 0.08" rotation="0 0 0" scale="1 1 1"></a-gltf-model>
+          <a-gltf-model id="mug-model-entity" src="#mug-model" position="0 0 0.08" rotation="0 0 0" scale="1 1 1"></a-gltf-model>
         </a-entity>
       </a-scene>
 
@@ -65,6 +67,7 @@
           <button id="start-button" type="button">Iniciar experiência</button>
         </div>
       </div>
+      <p class="live-status" id="live-status" role="status" aria-live="polite" hidden></p>
       <button class="stop" id="stop-button" type="button" hidden>Fechar câmara</button>
     </section>
 
@@ -85,43 +88,69 @@
     const startButton = document.querySelector('#start-button');
     const stopButton = document.querySelector('#stop-button');
     const target = document.querySelector('#mug-target');
+    const liveStatus = document.querySelector('#live-status');
+    const modelEntity = document.querySelector('#mug-model-entity');
     let arSystem;
+    let targetDetected = false;
+    let modelReady = false;
+
+    function setStatus(message) {
+      statusText.textContent = message;
+      liveStatus.textContent = message;
+      liveStatus.hidden = false;
+    }
 
     scene.addEventListener('loaded', () => {
       arSystem = scene.systems['mindar-image-system'];
     });
     scene.addEventListener('arReady', () => {
-      statusText.textContent = 'Câmara ativa. Procura a imagem de referência.';
+      setStatus('Câmara ativa. A procurar a imagem de referência…');
     });
     scene.addEventListener('arError', () => {
-      statusText.textContent = 'Não foi possível iniciar a câmara. Confirma as permissões do navegador.';
+      setStatus('Não foi possível iniciar a câmara. Confirma as permissões do navegador.');
       startOverlay.hidden = false;
       stopButton.hidden = true;
     });
     target.addEventListener('targetFound', () => {
-      statusText.textContent = 'Imagem reconhecida. A caneca deve aparecer sobre ela.';
+      targetDetected = true;
+      setStatus(modelReady
+        ? 'Imagem reconhecida e modelo 3D carregado.'
+        : 'Imagem reconhecida. A carregar o modelo 3D…');
     });
     target.addEventListener('targetLost', () => {
-      statusText.textContent = 'Imagem não detetada. Volta a apontar para a referência.';
+      targetDetected = false;
+      setStatus('Imagem não detetada. Mostra a fotografia completa e mantém o telemóvel estável.');
+    });
+    modelEntity.addEventListener('model-loaded', () => {
+      modelReady = true;
+      setStatus(targetDetected
+        ? 'Imagem reconhecida e modelo 3D carregado.'
+        : 'Modelo 3D carregado. A procurar a imagem de referência…');
+    });
+    modelEntity.addEventListener('model-error', (event) => {
+      console.error('Erro ao carregar o modelo 3D:', event);
+      setStatus('A imagem pode ser reconhecida, mas o modelo 3D não carregou. Verifica o ficheiro caneca.glb.');
     });
     startButton.addEventListener('click', async () => {
       if (!window.isSecureContext) {
-        statusText.textContent = 'Esta experiência precisa de ser aberta através de HTTPS.';
+        setStatus('Esta experiência precisa de ser aberta através de HTTPS.');
         return;
       }
       if (!arSystem) {
-        statusText.textContent = 'A página ainda está a preparar a experiência. Tenta novamente dentro de instantes.';
+        setStatus('A página ainda está a preparar a experiência. Tenta novamente dentro de instantes.');
         return;
       }
-      statusText.textContent = 'A iniciar a câmara…';
+      setStatus('A iniciar a câmara…');
       try {
         await arSystem.start();
         startOverlay.hidden = true;
         stopButton.hidden = false;
-        statusText.textContent = 'Câmara ativa. Procura a imagem de referência.';
+        setStatus(targetDetected
+          ? 'Imagem reconhecida. A caneca deve aparecer sobre ela.'
+          : 'Câmara ativa. A procurar a imagem de referência…');
       } catch (error) {
         console.error(error);
-        statusText.textContent = 'Não foi possível iniciar. Verifica a permissão da câmara e tenta novamente.';
+        setStatus('Não foi possível iniciar. Verifica a permissão da câmara e tenta novamente.');
         startOverlay.hidden = false;
         stopButton.hidden = true;
       }
@@ -130,6 +159,7 @@
       if (arSystem) arSystem.stop();
       startOverlay.hidden = false;
       stopButton.hidden = true;
+      liveStatus.hidden = true;
       statusText.textContent = 'Câmara fechada.';
     });
   </script>
